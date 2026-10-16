@@ -7,14 +7,19 @@
 #include <cctype>
 #include <iomanip>
 
+using namespace std;
+
 #ifdef _WIN32
 #include <windows.h>
+#ifndef ENABLE_VIRTUAL_TERMINAL_PROCESSING
+#define ENABLE_VIRTUAL_TERMINAL_PROCESSING 0x0004
+#endif
 #endif
 
 // ==========================================
 // CONFIGURAZIONE COLORI ANSI
 // ==========================================
-void enableAnsi() {
+void abilitaAnsi() {
 #ifdef _WIN32
     HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
     DWORD dwMode = 0;
@@ -23,147 +28,147 @@ void enableAnsi() {
 #endif
 }
 
-void clearScreen() {
-    std::cout << "\033[2J\033[1;1H";
+void pulisciSchermo() {
+    cout << "\033[2J\033[1;1H";
 }
 
-const std::string COLOR_RESET = "\033[0m";
-const std::string COLOR_BLUE = "\033[34m";   // Acqua
-const std::string COLOR_RED = "\033[31m";    // Colpo a segno
-const std::string COLOR_WHITE = "\033[37m";  // Mancato
-const std::string COLOR_GREEN = "\033[32m";  // Nave
-const std::string COLOR_YELLOW = "\033[33m"; // Evidenziato / Info
-const std::string COLOR_CYAN = "\033[36m";   // Intestazioni
+const string COLORE_RESET = "\033[0m";
+const string COLORE_BLU = "\033[34m";   // Acqua
+const string COLORE_ROSSO = "\033[31m";    // Colpo a segno
+const string COLORE_BIANCO = "\033[37m";  // Mancato
+const string COLORE_VERDE = "\033[32m";  // Nave
+const string COLORE_GIALLO = "\033[33m"; // Evidenziato / Info
+const string COLORE_CIANO = "\033[36m";   // Intestazioni
 
 // ==========================================
 // STRUTTURE E ENUMS
 // ==========================================
-enum class ShipType { CARRIER, BATTLESHIP, CRUISER, SUBMARINE, DESTROYER };
-enum class CellState { EMPTY, SHIP, HIT, MISS };
+enum class TipoNave { PORTAEREI, CORAZZATA, INCROCIATORE, SOTTOMARINO, CACCIATORPEDINIERE };
+enum class StatoCella { VUOTA, NAVE, COLPITO, MANCATO };
 
-struct Coordinate {
+struct Coordinata {
     int x;
     int y;
-    bool operator==(const Coordinate& other) const { return x == other.x && y == other.y; }
+    bool operator==(const Coordinata& altra) const { return x == altra.x && y == altra.y; }
 };
 
 // ==========================================
-// CLASSE SHIP
+// CLASSE NAVE
 // ==========================================
-class Ship {
+class Nave {
 private:
-    std::string name_;
-    int size_;
-    ShipType type_;
-    bool horizontal_;
-    Coordinate startPos_;
-    std::vector<Coordinate> coordinates_;
-    int hits_;
+    string nome_;
+    int dimensione_;
+    TipoNave tipo_;
+    bool orizzontale_;
+    Coordinata posIniziale_;
+    vector<Coordinata> coordinate_;
+    int colpiRicevuti_;
 
 public:
-    Ship(std::string name, int size, ShipType type)
-        : name_(name), size_(size), type_(type), horizontal_(true), startPos_{-1, -1}, hits_(0) {}
+    Nave(string nome, int dimensione, TipoNave tipo)
+        : nome_(nome), dimensione_(dimensione), tipo_(tipo), orizzontale_(true), posIniziale_{-1, -1}, colpiRicevuti_(0) {}
 
-    void place(Coordinate start, bool horizontal) {
-        startPos_ = start;
-        horizontal_ = horizontal;
-        coordinates_.clear();
-        for (int i = 0; i < size_; ++i) {
-            if (horizontal_) coordinates_.push_back({start.x + i, start.y});
-            else coordinates_.push_back({start.x, start.y + i});
+    void posiziona(Coordinata inizio, bool orizzontale) {
+        posIniziale_ = inizio;
+        orizzontale_ = orizzontale;
+        coordinate_.clear();
+        for (int i = 0; i < dimensione_; ++i) {
+            if (orizzontale_) coordinate_.push_back({inizio.x + i, inizio.y});
+            else coordinate_.push_back({inizio.x, inizio.y + i});
         }
     }
 
-    bool isSunk() const { return hits_ >= size_; }
-    void hit() { if (hits_ < size_) hits_++; }
+    bool èAffondata() const { return colpiRicevuti_ >= dimensione_; }
+    void colpisci() { if (colpiRicevuti_ < dimensione_) colpiRicevuti_++; }
     
-    std::string getName() const { return name_; }
-    int getSize() const { return size_; }
-    ShipType getType() const { return type_; }
-    bool isHorizontal() const { return horizontal_; }
-    const std::vector<Coordinate>& getCoordinates() const { return coordinates_; }
-    bool isPlaced() const { return startPos_.x != -1 && startPos_.y != -1; }
+    string getNome() const { return nome_; }
+    int getDimensione() const { return dimensione_; }
+    TipoNave getTipo() const { return tipo_; }
+    bool èOrizzontale() const { return orizzontale_; }
+    const vector<Coordinata>& getCoordinate() const { return coordinate_; }
+    bool èPosizionata() const { return posIniziale_.x != -1 && posIniziale_.y != -1; }
 };
 
 // ==========================================
-// CLASSE BOARD
+// CLASSE GRIGLIA
 // ==========================================
-class Board {
+class Griglia {
 private:
-    static const int SIZE = 10;
-    CellState grid_[SIZE][SIZE];
-    std::vector<Ship> ships_;
+    static const int DIMENSIONE = 10;
+    StatoCella griglia_[DIMENSIONE][DIMENSIONE];
+    vector<Nave> navi_;
 
 public:
-    Board() { reset(); }
+    Griglia() { azzera(); }
 
-    void reset() {
-        for (int y = 0; y < SIZE; ++y)
-            for (int x = 0; x < SIZE; ++x)
-                grid_[y][x] = CellState::EMPTY;
-        ships_.clear();
+    void azzera() {
+        for (int y = 0; y < DIMENSIONE; ++y)
+            for (int x = 0; x < DIMENSIONE; ++x)
+                griglia_[y][x] = StatoCella::VUOTA;
+        navi_.clear();
     }
 
-    bool canPlaceShip(const Ship& ship, Coordinate start, bool horizontal) const {
-        int size = ship.getSize();
-        if (horizontal && start.x + size > SIZE) return false;
-        if (!horizontal && start.y + size > SIZE) return false;
-        if (start.x < 0 || start.y < 0) return false;
+    bool puòPosizionare(const Nave& nave, Coordinata inizio, bool orizzontale) const {
+        int dim = nave.getDimensione();
+        if (orizzontale && inizio.x + dim > DIMENSIONE) return false;
+        if (!orizzontale && inizio.y + dim > DIMENSIONE) return false;
+        if (inizio.x < 0 || inizio.y < 0) return false;
 
-        for (int i = 0; i < size; ++i) {
-            int x = horizontal ? start.x + i : start.x;
-            int y = horizontal ? start.y : start.y + i;
-            if (grid_[y][x] == CellState::SHIP) return false;
+        for (int i = 0; i < dim; ++i) {
+            int x = orizzontale ? inizio.x + i : inizio.x;
+            int y = orizzontale ? inizio.y : inizio.y + i;
+            if (griglia_[y][x] == StatoCella::NAVE) return false;
         }
         return true;
     }
 
-    bool placeShip(Ship& ship, Coordinate start, bool horizontal) {
-        if (!canPlaceShip(ship, start, horizontal)) return false;
-        removeShip(ship.getType());
+    bool posizionaNave(Nave& nave, Coordinata inizio, bool orizzontale) {
+        if (!puòPosizionare(nave, inizio, orizzontale)) return false;
+        rimuoviNave(nave.getTipo());
 
-        ship.place(start, horizontal);
-        for (const auto& coord : ship.getCoordinates()) {
-            grid_[coord.y][coord.x] = CellState::SHIP;
+        nave.posiziona(inizio, orizzontale);
+        for (const auto& coord : nave.getCoordinate()) {
+            griglia_[coord.y][coord.x] = StatoCella::NAVE;
         }
-        ships_.push_back(ship);
+        navi_.push_back(nave);
         return true;
     }
 
-    bool removeShip(ShipType type) {
-        for (auto it = ships_.begin(); it != ships_.end(); ++it) {
-            if (it->getType() == type) {
-                if (it->isPlaced()) {
-                    for (const auto& coord : it->getCoordinates()) {
-                        grid_[coord.y][coord.x] = CellState::EMPTY;
+    bool rimuoviNave(TipoNave tipo) {
+        for (auto it = navi_.begin(); it != navi_.end(); ++it) {
+            if (it->getTipo() == tipo) {
+                if (it->èPosizionata()) {
+                    for (const auto& coord : it->getCoordinate()) {
+                        griglia_[coord.y][coord.x] = StatoCella::VUOTA;
                     }
                 }
-                ships_.erase(it);
+                navi_.erase(it);
                 return true;
             }
         }
         return false;
     }
 
-    int attackCell(Coordinate coord, Ship*& hitShip) {
-        if (coord.x < 0 || coord.x >= SIZE || coord.y < 0 || coord.y >= SIZE) return -1;
+    int attaccaCella(Coordinata coord, Nave*& naveColpita) {
+        if (coord.x < 0 || coord.x >= DIMENSIONE || coord.y < 0 || coord.y >= DIMENSIONE) return -1;
 
-        CellState& state = grid_[coord.y][coord.x];
-        if (state == CellState::HIT || state == CellState::MISS) return -1;
+        StatoCella& stato = griglia_[coord.y][coord.x];
+        if (stato == StatoCella::COLPITO || stato == StatoCella::MANCATO) return -1;
 
-        if (state == CellState::EMPTY) {
-            state = CellState::MISS;
+        if (stato == StatoCella::VUOTA) {
+            stato = StatoCella::MANCATO;
             return 0; // Mancato
         }
 
-        if (state == CellState::SHIP) {
-            state = CellState::HIT;
-            for (auto& ship : ships_) {
-                for (const auto& c : ship.getCoordinates()) {
+        if (stato == StatoCella::NAVE) {
+            stato = StatoCella::COLPITO;
+            for (auto& nave : navi_) {
+                for (const auto& c : nave.getCoordinate()) {
                     if (c == coord) {
-                        ship.hit();
-                        hitShip = &ship;
-                        if (ship.isSunk()) return 2; // Affondata
+                        nave.colpisci();
+                        naveColpita = &nave;
+                        if (nave.èAffondata()) return 2; // Affondata
                         return 1; // Colpita
                     }
                 }
@@ -172,266 +177,266 @@ public:
         return -1;
     }
 
-    bool allShipsSunk() const {
-        if (ships_.empty()) return false;
-        for (const auto& ship : ships_) {
-            if (!ship.isSunk()) return false;
+    bool tutteNaviAffondate() const {
+        if (navi_.empty()) return false;
+        for (const auto& nave : navi_) {
+            if (!nave.èAffondata()) return false;
         }
         return true;
     }
 
-    void autoPlaceShips() {
-        for (int y = 0; y < SIZE; ++y)
-            for (int x = 0; x < SIZE; ++x)
-                grid_[y][x] = CellState::EMPTY;
+    void posizionaNaviCasualmente() {
+        for (int y = 0; y < DIMENSIONE; ++y)
+            for (int x = 0; x < DIMENSIONE; ++x)
+                griglia_[y][x] = StatoCella::VUOTA;
         
-        std::vector<Ship> currentShips = ships_;
-        ships_.clear();
+        vector<Nave> naviCorrenti = navi_;
+        navi_.clear();
 
-        for (auto& ship : currentShips) {
-            bool placed = false;
-            while (!placed) {
-                Coordinate start = {std::rand() % SIZE, std::rand() % SIZE};
-                bool horiz = (std::rand() % 2 == 0);
-                if (canPlaceShip(ship, start, horiz)) {
-                    ship.place(start, horiz);
-                    for (const auto& coord : ship.getCoordinates()) {
-                        grid_[coord.y][coord.x] = CellState::SHIP;
+        for (auto& nave : naviCorrenti) {
+            bool posizionata = false;
+            while (!posizionata) {
+                Coordinata inizio = {rand() % DIMENSIONE, rand() % DIMENSIONE};
+                bool oriz = (rand() % 2 == 0);
+                if (puòPosizionare(nave, inizio, oriz)) {
+                    nave.posiziona(inizio, oriz);
+                    for (const auto& coord : nave.getCoordinate()) {
+                        griglia_[coord.y][coord.x] = StatoCella::NAVE;
                     }
-                    ships_.push_back(ship);
-                    placed = true;
+                    navi_.push_back(nave);
+                    posizionata = true;
                 }
             }
         }
     }
 
-    CellState getCellState(int x, int y) const { return grid_[y][x]; }
-    std::vector<Ship>& getShips() { return ships_; }
-    const std::vector<Ship>& getShips() const { return ships_; }
-    void addShip(Ship ship) { ships_.push_back(ship); }
+    StatoCella getStatoCella(int x, int y) const { return griglia_[y][x]; }
+    vector<Nave>& getNavi() { return navi_; }
+    const vector<Nave>& getNavi() const { return navi_; }
+    void aggiungiNave(Nave nave) { navi_.push_back(nave); }
 };
 
 // ==========================================
-// CLASSE PLAYER
+// CLASSE GIOCATORE
 // ==========================================
-class Player {
+class Giocatore {
 private:
-    std::string name_;
-    Board board_;
-    int shotsFired_;
-    int hitsLanded_;
-    int misses_;
+    string nome_;
+    Griglia griglia_;
+    int colpiSparati_;
+    int colpiASegno_;
+    int mancati_;
 
 public:
-    Player(std::string name = "Giocatore")
-        : name_(name), shotsFired_(0), hitsLanded_(0), misses_(0) {}
+    Giocatore(string nome = "Giocatore")
+        : nome_(nome), colpiSparati_(0), colpiASegno_(0), mancati_(0) {}
 
-    std::string getName() const { return name_; }
-    Board& getBoard() { return board_; }
-    const Board& getBoard() const { return board_; }
+    string getNome() const { return nome_; }
+    Griglia& getGriglia() { return griglia_; }
+    const Griglia& getGriglia() const { return griglia_; }
 
-    int getShotsFired() const { return shotsFired_; }
-    int getHitsLanded() const { return hitsLanded_; }
-    int getMisses() const { return misses_; }
+    int getColpiSparati() const { return colpiSparati_; }
+    int getColpiASegno() const { return colpiASegno_; }
+    int getMancati() const { return mancati_; }
 
-    void recordShot(bool hit) {
-        shotsFired_++;
-        if (hit) hitsLanded_++;
-        else misses_++;
+    void registraColpo(bool successo) {
+        colpiSparati_++;
+        if (successo) colpiASegno_++;
+        else mancati_++;
     }
 
-    void resetStats() {
-        shotsFired_ = 0;
-        hitsLanded_ = 0;
-        misses_ = 0;
-        board_.reset();
+    void azzeraStatistiche() {
+        colpiSparati_ = 0;
+        colpiASegno_ = 0;
+        mancati_ = 0;
+        griglia_.azzera();
     }
 };
 
 // ==========================================
 // FUNZIONI DI SUPPORTO E INTERFACCIA
 // ==========================================
-std::vector<Ship> createStandardFleet() {
+vector<Nave> creaFlottaStandard() {
     return {
-        Ship("Portaerei", 5, ShipType::CARRIER),
-        Ship("Corazzata", 4, ShipType::BATTLESHIP),
-        Ship("Incrociatore", 3, ShipType::CRUISER),
-        Ship("Sottomarino", 3, ShipType::SUBMARINE),
-        Ship("Cacciatorpediniere", 2, ShipType::DESTROYER)
+        Nave("Portaerei", 5, TipoNave::PORTAEREI),
+        Nave("Corazzata", 4, TipoNave::CORAZZATA),
+        Nave("Incrociatore", 3, TipoNave::INCROCIATORE),
+        Nave("Sottomarino", 3, TipoNave::SOTTOMARINO),
+        Nave("Cacciatorpediniere", 2, TipoNave::CACCIATORPEDINIERE)
     };
 }
 
-void printBoard(const Board& board, bool hideShips) {
-    std::cout << "    A B C D E F G H I J\n";
-    std::cout << "   ---------------------\n";
+void stampaGriglia(const Griglia& griglia, bool nascondiNavi) {
+    cout << "    A B C D E F G H I J\n";
+    cout << "    ---------------------\n";
     for (int y = 0; y < 10; ++y) {
-        std::cout << (y + 1 < 10 ? " " : "") << y + 1 << " | ";
+        cout << (y + 1 < 10 ? " " : "") << y + 1 << " | ";
         for (int x = 0; x < 10; ++x) {
-            CellState state = board.getCellState(x, y);
-            if (state == CellState::EMPTY) std::cout << COLOR_BLUE << "~ " << COLOR_RESET;
-            else if (state == CellState::SHIP) {
-                if (hideShips) std::cout << COLOR_BLUE << "~ " << COLOR_RESET;
-                else std::cout << COLOR_GREEN << "S " << COLOR_RESET;
+            StatoCella stato = griglia.getStatoCella(x, y);
+            if (stato == StatoCella::VUOTA) cout << COLORE_BLU << "~ " << COLORE_RESET;
+            else if (stato == StatoCella::NAVE) {
+                if (nascondiNavi) cout << COLORE_BLU << "~ " << COLORE_RESET;
+                else cout << COLORE_VERDE << "S " << COLORE_RESET;
             }
-            else if (state == CellState::HIT) std::cout << COLOR_RED << "X " << COLOR_RESET;
-            else if (state == CellState::MISS) std::cout << COLOR_WHITE << "O " << COLOR_RESET;
+            else if (stato == StatoCella::COLPITO) cout << COLORE_ROSSO << "X " << COLORE_RESET;
+            else if (stato == StatoCella::MANCATO) cout << COLORE_BIANCO << "O " << COLORE_RESET;
         }
-        std::cout << "|\n";
+        cout << "|\n";
     }
-    std::cout << "   ---------------------\n";
+    cout << "    ---------------------\n";
 }
 
-void setupPlayerFleet(Player& player) {
-    for (auto& ship : createStandardFleet()) {
-        player.getBoard().addShip(ship);
+void configuraFlottaGiocatore(Giocatore& giocatore) {
+    for (auto& nave : creaFlottaStandard()) {
+        giocatore.getGriglia().aggiungiNave(nave);
     }
     
-    clearScreen();
-    std::cout << COLOR_CYAN << "=== POSIZIONAMENTO FLOTTA: " << player.getName() << " ===" << COLOR_RESET << "\n\n";
-    std::cout << "Vuoi posizionare le navi casualmente o manualmente? (c = casuale, m = manuale): ";
-    char choice;
-    std::cin >> choice;
-    std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+    pulisciSchermo();
+    cout << COLORE_CIANO << "=== POSIZIONAMENTO FLOTTA: " << giocatore.getNome() << " ===" << COLORE_RESET << "\n\n";
+    cout << "Vuoi posizionare le navi casualmente o manualmente? (c = casuale, m = manuale): ";
+    char scelta;
+    cin >> scelta;
+    cin.ignore(numeric_limits<streamsize>::max(), '\n');
 
-    if (std::tolower(choice) == 'c') {
-        player.getBoard().autoPlaceShips();
-        std::cout << COLOR_GREEN << "\nFlotta posizionata casualmente con successo!\n" << COLOR_RESET;
-        std::cout << "Premi Invio per continuare...";
-        std::cin.get();
+    if (tolower(scelta) == 'c') {
+        giocatore.getGriglia().posizionaNaviCasualmente();
+        cout << COLORE_VERDE << "\nFlotta posizionata casualmente con successo!\n" << COLORE_RESET;
+        cout << "Premi Invio per continuare...";
+        cin.get();
         return;
     }
 
-    auto& ships = player.getBoard().getShips();
-    for (size_t i = 0; i < ships.size(); ++i) {
-        bool placed = false;
-        while (!placed) {
-            clearScreen();
-            std::cout << COLOR_CYAN << "Posizionamento di: " << ships[i].getName() << " (Lunghezza: " << ships[i].getSize() << ")" << COLOR_RESET << "\n\n";
-            printBoard(player.getBoard(), false);
+    auto& navi = giocatore.getGriglia().getNavi();
+    for (size_t i = 0; i < navi.size(); ++i) {
+        bool posizionata = false;
+        while (!posizionata) {
+            pulisciSchermo();
+            cout << COLORE_CIANO << "Posizionamento di: " << navi[i].getNome() << " (Lunghezza: " << navi[i].getDimensione() << ")" << COLORE_RESET << "\n\n";
+            stampaGriglia(giocatore.getGriglia(), false);
             
-            char colChar;
-            int row;
-            char orient;
-            std::cout << "\nInserisci coordinata iniziale (es. A 3): ";
-            if (!(std::cin >> colChar >> row)) {
-                std::cin.clear();
-                std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+            char colonnaChar;
+            int riga;
+            char orientamento;
+            cout << "\nInserisci coordinata iniziale (es. A 3): ";
+            if (!(cin >> colonnaChar >> riga)) {
+                cin.clear();
+                cin.ignore(numeric_limits<streamsize>::max(), '\n');
                 continue;
             }
-            std::cout << "Orientamento (H = Orizzontale, V = Verticale): ";
-            std::cin >> orient;
-            std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+            cout << "Orientamento (H = Orizzontale, V = Verticale): ";
+            cin >> orientamento;
+            cin.ignore(numeric_limits<streamsize>::max(), '\n');
 
-            int x = std::toupper(colChar) - 'A';
-            int y = row - 1;
-            bool horiz = (std::toupper(orient) == 'H');
+            int x = toupper(colonnaChar) - 'A';
+            int y = riga - 1;
+            bool oriz = (toupper(orientamento) == 'H');
 
-            if (player.getBoard().placeShip(ships[i], {x, y}, horiz)) {
-                placed = true;
+            if (giocatore.getGriglia().posizionaNave(navi[i], {x, y}, oriz)) {
+                posizionata = true;
             } else {
-                std::cout << COLOR_RED << "\nPosizione non valida o fuori limiti! Premi Invio per riprovare..." << COLOR_RESET;
-                std::cin.get();
+                cout << COLORE_ROSSO << "\nPosizione non valida o fuori limiti! Premi Invio per riprovare..." << COLORE_RESET;
+                cin.get();
             }
         }
     }
 }
 
 int main() {
-    enableAnsi();
-    std::srand(static_cast<unsigned int>(std::time(nullptr)));
+    abilitaAnsi();
+    srand(static_cast<unsigned int>(time(nullptr)));
 
-    clearScreen();
-    std::cout << COLOR_YELLOW << "========================================\n";
-    std::cout << "       BATTAGLIA NAVALE IN C++          \n";
-    std::cout << "========================================\n\n" << COLOR_RESET;
+    pulisciSchermo();
+    cout << COLORE_GIALLO << "========================================\n";
+    cout << "        BATTAGLIA NAVALE IN C++         \n";
+    cout << "========================================\n\n" << COLORE_RESET;
 
-    std::string name1, name2;
-    std::cout << "Nome Giocatore 1: ";
-    std::cin >> name1;
-    std::cout << "Nome Giocatore 2: ";
-    std::cin >> name2;
-    std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+    string nome1, nome2;
+    cout << "Nome Giocatore 1: ";
+    cin >> nome1;
+    cout << "Nome Giocatore 2: ";
+    cin >> nome2;
+    cin.ignore(numeric_limits<streamsize>::max(), '\n');
 
-    Player p1(name1.empty() ? "Giocatore 1" : name1);
-    Player p2(name2.empty() ? "Giocatore 2" : name2);
+    Giocatore g1(nome1.empty() ? "Giocatore 1" : nome1);
+    Giocatore g2(nome2.empty() ? "Giocatore 2" : nome2);
 
-    setupPlayerFleet(p1);
+    configuraFlottaGiocatore(g1);
 
-    clearScreen();
-    std::cout << "Passa il computer a " << COLOR_YELLOW << p2.getName() << COLOR_RESET << ".\n\nPremi Invio quando sei pronto...";
-    std::cin.get();
+    pulisciSchermo();
+    cout << "Passa il computer a " << COLORE_GIALLO << g2.getNome() << COLORE_RESET << ".\n\nPremi Invio quando sei pronto...";
+    cin.get();
 
-    setupPlayerFleet(p2);
+    configuraFlottaGiocatore(g2);
 
-    bool gameOver = false;
-    Player* activeP = &p1;
-    Player* enemyP = &p2;
+    bool partitaFinita = false;
+    Giocatore* giocatoreAttivo = &g1;
+    Giocatore* giocatoreAvversario = &g2;
 
-    while (!gameOver) {
-        clearScreen();
-        std::cout << COLOR_CYAN << "Turno di: " << COLOR_YELLOW << activeP->getName() << COLOR_RESET << "\n\n";
+    while (!partitaFinita) {
+        pulisciSchermo();
+        cout << COLORE_CIANO << "Turno di: " << COLORE_GIALLO << giocatoreAttivo->getNome() << COLORE_RESET << "\n\n";
         
-        std::cout << "La tua flotta:\n";
-        printBoard(activeP->getBoard(), false);
+        cout << "La tua flotta:\n";
+        stampaGriglia(giocatoreAttivo->getGriglia(), false);
         
-        std::cout << "\nGriglia attacchi:\n";
-        printBoard(enemyP->getBoard(), true);
+        cout << "\nGriglia attacchi:\n";
+        stampaGriglia(giocatoreAvversario->getGriglia(), true);
 
-        char colChar;
-        int row;
-        std::cout << "\nInserisci coordinate colpo (es. B 4): ";
-        if (!(std::cin >> colChar >> row)) {
-            std::cin.clear();
-            std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+        char colonnaChar;
+        int riga;
+        cout << "\nInserisci coordinate colpo (es. B 4): ";
+        if (!(cin >> colonnaChar >> riga)) {
+            cin.clear();
+            cin.ignore(numeric_limits<streamsize>::max(), '\n');
             continue;
         }
-        std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+        cin.ignore(numeric_limits<streamsize>::max(), '\n');
 
-        int x = std::toupper(colChar) - 'A';
-        int y = row - 1;
+        int x = toupper(colonnaChar) - 'A';
+        int y = riga - 1;
 
-        Ship* hitShip = nullptr;
-        int result = enemyP->getBoard().attackCell({x, y}, hitShip);
+        Nave* naveColpita = nullptr;
+        int risultato = giocatoreAvversario->getGriglia().attaccaCella({x, y}, naveColpita);
 
-        if (result == -1) {
-            std::cout << COLOR_RED << "\nColpo non valido o casella gia colpita! Premi Invio per riprovare..." << COLOR_RESET;
-            std::cin.get();
+        if (risultato == -1) {
+            cout << COLORE_ROSSO << "\nColpo non valido o casella gia colpita! Premi Invio per riprovare..." << COLORE_RESET;
+            cin.get();
             continue;
         }
 
-        activeP->recordShot(result > 0);
+        giocatoreAttivo->registraColpo(risultato > 0);
 
-        std::cout << "\nRisultato: ";
-        if (result == 0) {
-            std::cout << COLOR_WHITE << "ACQUA!" << COLOR_RESET << "\n";
-        } else if (result == 1) {
-            std::cout << COLOR_RED << "COLPITO!" << COLOR_RESET << "\n";
-        } else if (result == 2) {
-            std::cout << COLOR_RED << "COLPITO E AFFONDATO (" << hitShip->getName() << ")!" << COLOR_RESET << "\n";
+        cout << "\nRisultato: ";
+        if (risultato == 0) {
+            cout << COLORE_BIANCO << "ACQUA!" << COLORE_RESET << "\n";
+        } else if (risultato == 1) {
+            cout << COLORE_ROSSO << "COLPITO!" << COLORE_RESET << "\n";
+        } else if (risultato == 2) {
+            cout << COLORE_ROSSO << "COLPITO E AFFONDATO (" << naveColpita->getNome() << ")!" << COLORE_RESET << "\n";
         }
 
-        if (enemyP->getBoard().allShipsSunk()) {
-            clearScreen();
-            std::cout << COLOR_GREEN << "\n========================================\n";
-            std::cout << "             FINE PARTITA               \n";
-            std::cout << "========================================\n";
-            std::cout << " VITTORIA! " << activeP->getName() << " ha distrutto la flotta nemica!\n\n";
-            std::cout << "--- STATISTICHE FINALI ---\n";
-            std::cout << activeP->getName() << " -> Colpi sparati: " << activeP->getShotsFired() 
-                      << " | A segno: " << activeP->getHitsLanded() 
-                      << " | Mancati: " << activeP->getMisses() << "\n";
-            std::cout << enemyP->getName() << " -> Colpi sparati: " << enemyP->getShotsFired() 
-                      << " | A segno: " << enemyP->getHitsLanded() 
-                      << " | Mancati: " << enemyP->getMisses() << "\n";
-            std::cout << "========================================\n" << COLOR_RESET;
-            gameOver = true;
+        if (giocatoreAvversario->getGriglia().tutteNaviAffondate()) {
+            pulisciSchermo();
+            cout << COLORE_VERDE << "\n========================================\n";
+            cout << "               FINE PARTITA             \n";
+            cout << "========================================\n";
+            cout << " VITTORIA! " << giocatoreAttivo->getNome() << " ha distrutto la flotta nemica!\n\n";
+            cout << "--- STATISTICHE FINALI ---\n";
+            cout << giocatoreAttivo->getNome() << " -> Colpi sparati: " << giocatoreAttivo->getColpiSparati() 
+                      << " | A segno: " << giocatoreAttivo->getColpiASegno() 
+                      << " | Mancati: " << giocatoreAttivo->getMancati() << "\n";
+            cout << giocatoreAvversario->getNome() << " -> Colpi sparati: " << giocatoreAvversario->getColpiSparati() 
+                      << " | A segno: " << giocatoreAvversario->getColpiASegno() 
+                      << " | Mancati: " << giocatoreAvversario->getMancati() << "\n";
+            cout << "========================================\n" << COLORE_RESET;
+            partitaFinita = true;
         } else {
-            std::cout << "\nPremi Invio per passare il turno all'avversario...";
-            std::cin.get();
+            cout << "\nPremi Invio per passare il turno all'avversario...";
+            cin.get();
 
-            Player* temp = activeP;
-            activeP = enemyP;
-            enemyP = temp;
+            Giocatore* temp = giocatoreAttivo;
+            giocatoreAttivo = giocatoreAvversario;
+            giocatoreAvversario = temp;
         }
     }
 
